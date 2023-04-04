@@ -51,6 +51,17 @@
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
 
+  <build_depend>message_filters</build_depend>
+  <build_depend>rospy</build_depend>
+  <build_depend>tf2_geometry_msgs</build_depend>
+  <build_export_depend>message_filters</build_export_depend>
+  <build_export_depend>rospy</build_export_depend>
+  <build_export_depend>tf2_geometry_msgs</build_export_depend>
+  <exec_depend>message_filters</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>tf2_geometry_msgs</exec_depend>
+
+
   <export>
     <build_type condition="$ROS_VERSION == 1">catkin</build_type>
     <build_type condition="$ROS_VERSION == 2">ament_cmake</build_type>

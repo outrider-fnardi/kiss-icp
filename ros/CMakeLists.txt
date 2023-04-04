@@ -51,7 +51,10 @@ if("$ENV{ROS_VERSION}" STREQUAL "1")
                rosbag
                std_msgs
                tf2
-               tf2_ros)
+               tf2_ros
+               message_filters
+               rospy
+               tf2_geometry_msgs)
   catkin_package()
 
   # ROS1 node
@@ -60,6 +63,12 @@ if("$ENV{ROS_VERSION}" STREQUAL "1")
   target_link_libraries(odometry_node kiss_icp::pipeline ${catkin_LIBRARIES})
   install(TARGETS odometry_node RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
   install(DIRECTORY launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+  catkin_install_python(
+    PROGRAMS 
+      scripts/aggregate_cloud.py 
+      scripts/save_map.py
+      scripts/visualize_point_cloud.py
+    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 elseif("$ENV{ROS_VERSION}" STREQUAL "2")
   message(STATUS "KISS-ICP-ROS2 wrapper will be compiled")
 
