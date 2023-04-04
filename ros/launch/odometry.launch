@@ -1,16 +1,21 @@
 <?xml version="1.0"?>
 <launch>
+  <rosparam param="/use_sim_time">TRUE</rosparam>
+
+  <node pkg="kiss_icp" type="aggregate_cloud.py" name="aggregate_cloud_node" output="screen" />
+  <node pkg="kiss_icp" type="save_map.py" name="save_map_node" output="screen" />
+
   <!-- ROS paramaters -->
-  <arg name="bagfile" default=""/>
+  <arg name="bagfile" default="/home/fnardi/dataset/lidar_trailer_tracking/filtered.bag"/>
   <arg name="visualize" default="true"/>
   <arg name="odom_frame" default="odom"/>
   <arg name="child_frame" default="base_link"/>
-  <arg name="topic" default=""/>
+  <arg name="topic" default="/aggregated_point_cloud"/>
 
   <!-- KISS-ICP paramaters -->
   <arg name="deskew" default="false"/>
-  <arg name="max_range" default="100.0" />
-  <arg name="min_range" default="5.0" />
+  <arg name="max_range" default="80.0" />
+  <arg name="min_range" default="0.0" />
   <arg name="voxel_size" default="" />
 
   <!-- Odometry node -->
@@ -31,7 +36,7 @@
 
   <!-- Rosbag player, if bagfile argument was specified -->
   <group if="$(eval bagfile != '')">
-    <node pkg="rosbag" type="play" name="player" args="$(arg bagfile)" output="screen"/>
+    <node pkg="rosbag" type="play" name="rosbag_player" args="--pause --clock $(arg bagfile)" output="screen" required="true" launch-prefix="xterm -e " />
   </group>
 
   <!-- Visualizer -->
