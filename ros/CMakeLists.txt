@@ -54,8 +54,17 @@ if("$ENV{ROS_VERSION}" STREQUAL "1")
                tf2_ros
                message_filters
                rospy
-               tf2_geometry_msgs)
+               tf2_geometry_msgs
+               gflags
+               rosbag)
+  find_package(Open3D REQUIRED)
   catkin_package()
+
+  # offline executable
+  add_executable(offline_tracker offline/offline_tracker.cpp)
+  target_include_directories(offline_tracker PUBLIC include ${catkin_INCLUDE_DIRS} ${Open3D_INCLUDE_DIRS})
+  target_link_libraries(offline_tracker kiss_icp::pipeline ${catkin_LIBRARIES} Open3D::Open3D)
+
 
   # ROS1 node
   add_executable(odometry_node ros1/OdometryServer.cpp)
@@ -63,12 +72,14 @@ if("$ENV{ROS_VERSION}" STREQUAL "1")
   target_link_libraries(odometry_node kiss_icp::pipeline ${catkin_LIBRARIES})
   install(TARGETS odometry_node RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
   install(DIRECTORY launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+
   catkin_install_python(
     PROGRAMS 
       scripts/aggregate_cloud.py 
       scripts/save_map.py
       scripts/visualize_point_cloud.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
+
 elseif("$ENV{ROS_VERSION}" STREQUAL "2")
   message(STATUS "KISS-ICP-ROS2 wrapper will be compiled")
 

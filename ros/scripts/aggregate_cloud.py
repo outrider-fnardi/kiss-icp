@@ -36,6 +36,31 @@ def ros_transform_to_matrix(tf):
     
     return T
 
+def points_outside_bbox(point_cloud, bbox_min, bbox_max):
+    """
+    Filter out all points from a point cloud that are inside an axis-aligned bounding box defined by
+    the minimum and maximum corner coordinates.
+
+    :param point_cloud: Open3D point cloud.
+    :param bbox_min: Minimum corner coordinates of the bounding box.
+    :param bbox_max: Maximum corner coordinates of the bounding box.
+    :return: Open3D point cloud containing only the points outside the bounding box.
+    """
+    # Create a new point cloud to hold the points outside the bounding box
+    pcd_outside_bbox = o3d.geometry.PointCloud()
+    
+    # Iterate through each point in the point cloud
+    for point in point_cloud.points:
+        # Check if the point is outside the bounding box
+        if (point[0] < bbox_min[0]) or (point[0] > bbox_max[0]) or \
+           (point[1] < bbox_min[1]) or (point[1] > bbox_max[1]) or \
+           (point[2] < bbox_min[2]) or (point[2] > bbox_max[2]):
+            # Add the point to the new point cloud if it's outside the bounding box
+            pcd_outside_bbox.points.append(point)
+    
+    return pcd_outside_bbox 
+    
+
 class PointCloudAggregator:
     def __init__(self):
         self.aggregated_pc = o3d.geometry.PointCloud()
@@ -75,9 +100,10 @@ class PointCloudAggregator:
         self.transform_pc3 = ros_transform_to_matrix(tf3)
 
         # define cropping bounding box
-        self.bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound=(-1.5, -1.75, -2), max_bound=(5, 1.75, 2))
+        self.bbox_min = np.array([-1.5, -1.75, -2])
+        self.bbox_max = np.array([5, 1.75, 2])
+ 
 
-        
 
 
 
@@ -107,21 +133,9 @@ class PointCloudAggregator:
         while not rospy.is_shutdown():
             if self.aggregated_pc is not None:
             
-                # Get indices of points inside the bounding box
-                inside_indices = np.array(self.aggregated_pc.points)[:,0] < self.bbox.max_bound[0]
-                inside_indices &= np.array(self.aggregated_pc.points)[:,0] > self.bbox.min_bound[0]
-                inside_indices &= np.array(self.aggregated_pc.points)[:,1] < self.bbox.max_bound[1]
-                inside_indices &= np.array(self.aggregated_pc.points)[:,1] > self.bbox.min_bound[1]
-                inside_indices &= np.array(self.aggregated_pc.points)[:,2] < self.bbox.max_bound[2]
-                inside_indices &= np.array(self.aggregated_pc.points)[:,2] > self.bbox.min_bound[2]
-
-                # Remove points inside the bounding box from point cloud
-                self.aggregated_pc = self.aggregated_pc.select_by_index(np.where(inside_indices == False)[0])
-
                 # Downsample the point cloud
                 self.aggregated_pc = self.aggregated_pc.voxel_down_sample(voxel_size=0.1)
-
-    
+   
                 # Create the PointCloud2 message
                 header = Header()
                 header.stamp = rospy.Time.now()
