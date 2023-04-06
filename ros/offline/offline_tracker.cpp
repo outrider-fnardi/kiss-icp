@@ -154,12 +154,14 @@ tf2_ros::Buffer tf_buffer;
 std::vector<tf2::Transform> poses(3);
 
 // KISS-ICP
-kiss_icp::pipeline::KissICP tracker(kiss_icp::pipeline::KISSConfig{ 1.0, 100.0, 6, 20,
+kiss_icp::pipeline::KissICP tracker(kiss_icp::pipeline::KISSConfig{ 0.1, 100.0, 0, 20,
                                                                     0.1, 2.0, false });
 open3d::visualization::VisualizerWithKeyCallback visualizer;
 
-auto local_map_pcd = std::make_shared<open3d::geometry::PointCloud>();
+auto trailer_pcd = std::make_shared<open3d::geometry::PointCloud>();
+std::vector<Eigen::Vector3d> trailer_cloud;
 
+Sophus::SE3d initial_pose;
 
 void msgCallback(const sensor_msgs::PointCloud2::ConstPtr& msg_1,
                  const sensor_msgs::PointCloud2::ConstPtr& msg_2,
@@ -178,27 +180,34 @@ void msgCallback(const sensor_msgs::PointCloud2::ConstPtr& msg_1,
   *merged_pcd += *left_pcd;
   *merged_pcd += *right_pcd;
 
-  double voxel_size = 0.1;
-  auto downsampled_pcd = merged_pcd->VoxelDownSample(voxel_size);
+  double voxel_size = 0.5;
+  auto reference_pcd = merged_pcd->VoxelDownSample(voxel_size);
+  reference_pcd->PaintUniformColor(Eigen::Vector3d(0.0, 0.0, 1.0));
+
+  tracker.local_map_.Update(reference_pcd->points_, Sophus::SE3d());
 
   // Register frame, main entry point to KISS-ICP pipeline
-  const auto& [frame, keypoints] = tracker.RegisterFrame(downsampled_pcd->points_);
+  const auto& [frame, keypoints] = tracker.RegisterFrame(trailer_cloud, {});
 
   const auto kicp_pose = tracker.poses().back();
-  const Eigen::Vector3d t_current = kicp_pose.translation();
-  const Eigen::Quaterniond q_current = kicp_pose.unit_quaternion();
-  Eigen::Isometry3d eigen_pose = Eigen::Isometry3d::Identity();
-  eigen_pose.translation() = t_current;
-  eigen_pose.linear() = q_current.toRotationMatrix();
 
-  downsampled_pcd->Transform(eigen_pose.matrix());
-  downsampled_pcd->PaintUniformColor(Eigen::Vector3d(0.0, 0.0, 1.0));
+  std::cerr << kicp_pose.translation().transpose() << std::endl;
 
   visualizer.ClearGeometries();
+
   visualizer.AddGeometry(open3d::geometry::TriangleMesh::CreateCoordinateFrame());
-  visualizer.AddGeometry(createReferenceFrame(eigen_pose));
-  visualizer.AddGeometry(local_map_pcd);
-  visualizer.AddGeometry(downsampled_pcd);
+  visualizer.AddGeometry(reference_pcd);
+
+  auto trailer_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame();
+  trailer_frame->Transform(kicp_pose.matrix());
+  visualizer.AddGeometry(trailer_frame);
+
+  auto visualization_pcd = std::make_shared<open3d::geometry::PointCloud>();
+  *visualization_pcd = *trailer_pcd;
+  visualization_pcd->Transform(kicp_pose.matrix());
+  visualization_pcd->PaintUniformColor(Eigen::Vector3d(1.0, 0.0, 0.0));
+  visualizer.AddGeometry(visualization_pcd);
+
   visualizer.UpdateGeometry();
 
   while (!play)
@@ -214,6 +223,7 @@ void msgCallback(const sensor_msgs::PointCloud2::ConstPtr& msg_1,
   }
   visualizer.PollEvents();
   visualizer.UpdateRender();
+
 }
 
 int main(int argc, char** argv)
@@ -221,19 +231,18 @@ int main(int argc, char** argv)
   gflags::SetUsageMessage("Perform lidar tracking on rosbags");
   google::ParseCommandLineFlags(&argc, &argv, true);
 
-  // Read the lidar map from disk
-  std::cerr << "loading map: " << FLAGS_map_filename << std::endl;
-  auto lidar_map = open3d::io::CreatePointCloudFromFile(FLAGS_map_filename);
-  tracker.local_map_.Update(lidar_map->points_, Sophus::SE3d());
-  local_map_pcd->points_ = tracker.LocalMap();
-  local_map_pcd->PaintUniformColor(Eigen::Vector3d(0.4, 0.4, 0.4));
-
   // set initial pose
-  Sophus::SE3d initial_pose;
-  Eigen::Matrix3d R = Eigen::AngleAxisd(-M_PI_2, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  Eigen::Matrix3d R = Eigen::AngleAxisd(M_PI_2, Eigen::Vector3d::UnitZ()).toRotationMatrix();
   initial_pose.setRotationMatrix(R);
-  initial_pose.translation() << 4.672, 11.5, -1.377;
+  initial_pose.translation() << 11.5, -4.672, 1.377;
   tracker.poses_.push_back(initial_pose);
+
+  trailer_pcd = open3d::io::CreatePointCloudFromFile(FLAGS_map_filename);
+  trailer_cloud = trailer_pcd->points_;
+  trailer_pcd->PaintUniformColor(Eigen::Vector3d(0.4, 0.4, 0.4));
+
+  // Read the lidar map from disk
+  //  std::cerr << "loading map: " << FLAGS_map_filename << std::endl;
 
   ros::Time::init();
 

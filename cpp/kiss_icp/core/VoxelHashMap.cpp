@@ -152,6 +152,7 @@ void VoxelHashMap::Update(const Vector3dVector &points, const Eigen::Vector3d &o
 }
 
 void VoxelHashMap::Update(const Vector3dVector &points, const Sophus::SE3d &pose) {
+    map_.clear();
     Vector3dVector points_transformed(points.size());
     std::transform(points.cbegin(), points.cend(), points_transformed.begin(),
                    [&](const auto &point) { return pose * point; });
