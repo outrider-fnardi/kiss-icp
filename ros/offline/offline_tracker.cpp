@@ -154,46 +154,51 @@ tf2_ros::Buffer tf_buffer;
 std::vector<tf2::Transform> poses(3);
 
 // KISS-ICP
-kiss_icp::pipeline::KissICP odometry(kiss_icp::pipeline::KISSConfig{ 1.0, 100.0, 6, 20,
-                                                                     0.1, 2.0, false });
+kiss_icp::pipeline::KissICP tracker(kiss_icp::pipeline::KISSConfig{ 1.0, 100.0, 6, 20,
+                                                                    0.1, 2.0, false });
 open3d::visualization::VisualizerWithKeyCallback visualizer;
+
+auto local_map_pcd = std::make_shared<open3d::geometry::PointCloud>();
+
 
 void msgCallback(const sensor_msgs::PointCloud2::ConstPtr& msg_1,
                  const sensor_msgs::PointCloud2::ConstPtr& msg_2,
                  const sensor_msgs::PointCloud2::ConstPtr& msg_3)
 {
-  std::shared_ptr<open3d::geometry::PointCloud> cab_cloud = fromROStoOpen3d(msg_1);
-  std::shared_ptr<open3d::geometry::PointCloud> left_cloud = fromROStoOpen3d(msg_2);
-  std::shared_ptr<open3d::geometry::PointCloud> right_cloud = fromROStoOpen3d(msg_3);
+  std::shared_ptr<open3d::geometry::PointCloud> cab_pcd = fromROStoOpen3d(msg_1);
+  std::shared_ptr<open3d::geometry::PointCloud> left_pcd = fromROStoOpen3d(msg_2);
+  std::shared_ptr<open3d::geometry::PointCloud> right_pcd = fromROStoOpen3d(msg_3);
 
-  cab_cloud->Transform(tf2Eigen(poses[0]).matrix());
-  left_cloud->Transform(tf2Eigen(poses[1]).matrix());
-  right_cloud->Transform(tf2Eigen(poses[2]).matrix());
+  cab_pcd->Transform(tf2Eigen(poses[0]).matrix());
+  left_pcd->Transform(tf2Eigen(poses[1]).matrix());
+  right_pcd->Transform(tf2Eigen(poses[2]).matrix());
 
-  auto merged_cloud = std::make_shared<open3d::geometry::PointCloud>();
-  *merged_cloud = *cab_cloud;
-  *merged_cloud += *left_cloud;
-  *merged_cloud += *right_cloud;
+  auto merged_pcd = std::make_shared<open3d::geometry::PointCloud>();
+  *merged_pcd = *cab_pcd;
+  *merged_pcd += *left_pcd;
+  *merged_pcd += *right_pcd;
 
-  double voxel_size = 0.5;
-  auto downsampled_cloud = merged_cloud->VoxelDownSample(voxel_size);
+  double voxel_size = 0.1;
+  auto downsampled_pcd = merged_pcd->VoxelDownSample(voxel_size);
 
   // Register frame, main entry point to KISS-ICP pipeline
-  const auto& [frame, keypoints] = odometry.RegisterFrame(downsampled_cloud->points_, {});
+  const auto& [frame, keypoints] = tracker.RegisterFrame(downsampled_pcd->points_);
 
-  const auto pose = odometry.poses().back();
-  const Eigen::Vector3d t_current = pose.translation();
-  const Eigen::Quaterniond q_current = pose.unit_quaternion();
-  Eigen::Isometry3d transformation = Eigen::Isometry3d::Identity();
-  transformation.translation() = t_current;
-  transformation.linear() = q_current.toRotationMatrix();
+  const auto kicp_pose = tracker.poses().back();
+  const Eigen::Vector3d t_current = kicp_pose.translation();
+  const Eigen::Quaterniond q_current = kicp_pose.unit_quaternion();
+  Eigen::Isometry3d eigen_pose = Eigen::Isometry3d::Identity();
+  eigen_pose.translation() = t_current;
+  eigen_pose.linear() = q_current.toRotationMatrix();
 
-  auto local_map = std::make_shared<open3d::geometry::PointCloud>();
-  local_map->points_ = odometry.LocalMap();
+  downsampled_pcd->Transform(eigen_pose.matrix());
+  downsampled_pcd->PaintUniformColor(Eigen::Vector3d(0.0, 0.0, 1.0));
 
   visualizer.ClearGeometries();
-  visualizer.AddGeometry(createReferenceFrame(transformation));
-  visualizer.AddGeometry(local_map);
+  visualizer.AddGeometry(open3d::geometry::TriangleMesh::CreateCoordinateFrame());
+  visualizer.AddGeometry(createReferenceFrame(eigen_pose));
+  visualizer.AddGeometry(local_map_pcd);
+  visualizer.AddGeometry(downsampled_pcd);
   visualizer.UpdateGeometry();
 
   while (!play)
@@ -217,12 +222,18 @@ int main(int argc, char** argv)
   google::ParseCommandLineFlags(&argc, &argv, true);
 
   // Read the lidar map from disk
-  //  std::cerr << "loading map: " << FLAGS_map_filename << std::endl;
-  //  auto lidar_map = open3d::io::CreatePointCloudFromFile(FLAGS_map_filename);
+  std::cerr << "loading map: " << FLAGS_map_filename << std::endl;
+  auto lidar_map = open3d::io::CreatePointCloudFromFile(FLAGS_map_filename);
+  tracker.local_map_.Update(lidar_map->points_, Sophus::SE3d());
+  local_map_pcd->points_ = tracker.LocalMap();
+  local_map_pcd->PaintUniformColor(Eigen::Vector3d(0.4, 0.4, 0.4));
 
-  // Visualize the lidar map
-  //  open3d::visualization::DrawGeometries({ lidar_map });
-
+  // set initial pose
+  Sophus::SE3d initial_pose;
+  Eigen::Matrix3d R = Eigen::AngleAxisd(-M_PI_2, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  initial_pose.setRotationMatrix(R);
+  initial_pose.translation() << 4.672, 11.5, -1.377;
+  tracker.poses_.push_back(initial_pose);
 
   ros::Time::init();
 
@@ -241,20 +252,8 @@ int main(int argc, char** argv)
   topics.push_back("/ak/lidar_front_right/point_cloud");
   rosbag::View view(bag, rosbag::TopicQuery(topics));
 
+  // lookup lidar extrinsics
   fillTfBuffer(bag, tf_buffer);
-
-  std::vector<BagSubscriber<sensor_msgs::PointCloud2>> subs(3);
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2,
-                                                          sensor_msgs::PointCloud2, sensor_msgs::PointCloud2>
-      sync_pol;
-  message_filters::Synchronizer<sync_pol> sync(sync_pol(10), subs[0], subs[1], subs[2]);
-  sync.registerCallback(boost::bind(msgCallback, _1, _2, _3));
-
-  visualizer.CreateVisualizerWindow("Open3D VisualizerWithKeyCallback", 800, 600);
-  visualizer.RegisterKeyCallback(80, playCallback);
-  visualizer.RegisterKeyCallback(70, forwardCallback);
-  visualizer.RegisterKeyCallback(256, stopCallback);
-
   for (int i = 0, num_topics = topics.size(); i < num_topics; ++i)
   {
     const std::string& topic = topics[i];
@@ -268,6 +267,21 @@ int main(int argc, char** argv)
     }
   }
 
+  // create message filter synchronizer
+  std::vector<BagSubscriber<sensor_msgs::PointCloud2>> subs(3);
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2,
+                                                          sensor_msgs::PointCloud2, sensor_msgs::PointCloud2>
+      sync_pol;
+  message_filters::Synchronizer<sync_pol> sync(sync_pol(10), subs[0], subs[1], subs[2]);
+  sync.registerCallback(boost::bind(msgCallback, _1, _2, _3));
+
+  // create viewer
+  visualizer.CreateVisualizerWindow("Open3D VisualizerWithKeyCallback", 800, 600);
+  visualizer.RegisterKeyCallback(80, playCallback);
+  visualizer.RegisterKeyCallback(70, forwardCallback);
+  visualizer.RegisterKeyCallback(256, stopCallback);
+
+  // process bag
   for (auto m : view)
   {
     for (int i = 0; i < 3; ++i)
@@ -287,14 +301,20 @@ int main(int argc, char** argv)
     }
   }
 
-  open3d::geometry::PointCloud local_map;
-  local_map.points_ = odometry.LocalMap();
-  open3d::io::WritePointCloud(FLAGS_map_filename, local_map);
+  //  open3d::geometry::PointCloud local_map;
+  //  local_map.points_ = odometry.LocalMap();
+  //  open3d::io::WritePointCloud(FLAGS_map_filename, local_map);
 
 
   // Destroy the visualizer window
+  while (!stop)
+  {
+    visualizer.PollEvents();
+    visualizer.UpdateRender();
+  }
   visualizer.DestroyVisualizerWindow();
 
+  // close bag
   bag.close();
 
   return 0;

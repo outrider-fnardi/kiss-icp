@@ -75,7 +75,7 @@ KissICP::Vector3dVectorTuple KissICP::RegisterFrame(const std::vector<Eigen::Vec
                                                           sigma / 3.0);
     const auto model_deviation = initial_guess.inverse() * new_pose;
     adaptive_threshold_.UpdateModelDeviation(model_deviation);
-    local_map_.Update(frame_downsample, new_pose);
+        //    local_map_.Update(frame_downsample, new_pose);
     poses_.push_back(new_pose);
     return {frame, source};
 }

@@ -73,7 +73,7 @@ public:
     std::vector<Eigen::Vector3d> LocalMap() const { return local_map_.Pointcloud(); };
     std::vector<Sophus::SE3d> poses() const { return poses_; };
 
-private:
+//private:
     // KISS-ICP pipeline modules
     std::vector<Sophus::SE3d> poses_;
     KISSConfig config_;

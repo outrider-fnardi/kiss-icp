@@ -78,6 +78,7 @@ if("$ENV{ROS_VERSION}" STREQUAL "1")
       scripts/aggregate_cloud.py 
       scripts/save_map.py
       scripts/visualize_point_cloud.py
+      scripts/manipulate_map.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
 elseif("$ENV{ROS_VERSION}" STREQUAL "2")
