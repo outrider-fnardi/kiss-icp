@@ -13,7 +13,7 @@ from tf import transformations
 from std_msgs.msg import Header
 
 # Specify the path to the point cloud file
-pcd_path = "/home/fnardi/dataset/lidar_trailer_tracking/complete_lidar_map.pcd"
+pcd_path = "/home/fnardi/dataset/lidar_trailer_tracking/new_lidar_map.pcd"
 
 # Load the point cloud from disk
 pcd = o3d.io.read_point_cloud(pcd_path)
@@ -22,18 +22,18 @@ pcd = o3d.io.read_point_cloud(pcd_path)
 axes = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0)
 
 # Define the translation vector for the transform
-translation = np.array([-11.5, 4.672, -1.377])
+#translation = np.array([-11.5, 4.672, -1.377])
 
 # Define the 4x4 transformation matrix
-transformation = [[0,1,0,4.672],
-                  [-1,0,0,11.5],
-                  [0,0,1,-1.377],
-                  [0,0,0,1]]
+#transformation = [[0,1,0,4.672],
+#                  [-1,0,0,11.5],
+#                  [0,0,1,-1.377],
+#                  [0,0,0,1]]
 
 # Apply the transform to the point cloud and the axes
-pcd.transform(transformation)
+# pcd.transform(transformation)
 
-x_min=-15; x_max=5; y_min=-2; y_max=2; z_min=-50; z_max=50
+x_min=-30; x_max=40; y_min=-30; y_max=10; z_min=-50; z_max=50
 filtered_points = []
 for point in pcd.points:
     if(point[0] > x_min and point[0] < x_max \
@@ -52,4 +52,4 @@ o3d.visualization.draw_geometries([filtered_cloud,
                                    ])
 
 # store map on disk
-o3d.io.write_point_cloud("/home/fnardi/dataset/lidar_trailer_tracking/lidar_map.pcd", filtered_cloud)
+o3d.io.write_point_cloud("/home/fnardi/dataset/lidar_trailer_tracking/new_filtered_lidar_map.pcd", filtered_cloud)

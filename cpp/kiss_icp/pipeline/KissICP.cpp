@@ -31,6 +31,7 @@
 #include "kiss_icp/core/Preprocessing.hpp"
 #include "kiss_icp/core/Registration.hpp"
 #include "kiss_icp/core/VoxelHashMap.hpp"
+#include <iostream>
 
 namespace kiss_icp::pipeline {
 
@@ -66,6 +67,8 @@ KissICP::Vector3dVectorTuple KissICP::RegisterFrame(const std::vector<Eigen::Vec
     const auto prediction = GetPredictionModel();
     const auto last_pose = !poses_.empty() ? poses_.back() : Sophus::SE3d();
     const auto initial_guess = last_pose * prediction;
+
+        std::cerr << "initial guess:\n" << initial_guess.matrix() << std::endl;
 
     // Run icp
     const Sophus::SE3d new_pose = kiss_icp::RegisterFrame(source,         //

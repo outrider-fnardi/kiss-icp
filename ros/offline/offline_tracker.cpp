@@ -159,7 +159,7 @@ kiss_icp::pipeline::KissICP tracker(kiss_icp::pipeline::KISSConfig{ 1.0, 100.0, 
 open3d::visualization::VisualizerWithKeyCallback visualizer;
 
 auto local_map_pcd = std::make_shared<open3d::geometry::PointCloud>();
-
+auto kicp_pose = Sophus::SE3d();
 
 void msgCallback(const sensor_msgs::PointCloud2::ConstPtr& msg_1,
                  const sensor_msgs::PointCloud2::ConstPtr& msg_2,
@@ -181,24 +181,43 @@ void msgCallback(const sensor_msgs::PointCloud2::ConstPtr& msg_1,
   double voxel_size = 0.1;
   auto downsampled_pcd = merged_pcd->VoxelDownSample(voxel_size);
 
-  // Register frame, main entry point to KISS-ICP pipeline
-  const auto& [frame, keypoints] = tracker.RegisterFrame(downsampled_pcd->points_);
+  std::vector<Eigen::Vector3d> filtered_points;
+  filtered_points.reserve(downsampled_pcd->points_.size());
+  auto transformed_pcd = std::make_shared<open3d::geometry::PointCloud>();
+  *transformed_pcd = *downsampled_pcd;
+  transformed_pcd->Transform(kicp_pose.matrix());
+  double x_min = -30, x_max = 40, y_min = -30, y_max = -3, z_min = -50, z_max = 50;
+  for (auto point : transformed_pcd->points_)
+  {
+    if (point[0] > x_min && point[0] < x_max && point[1] > y_min &&
+        point[1] < y_max && point[2] > z_min && point[2] < z_max)
+    {
+      filtered_points.push_back(point);
+    }
+  }
+  transformed_pcd->points_ = filtered_points;
+  transformed_pcd->Transform(kicp_pose.inverse().matrix());
 
-  const auto kicp_pose = tracker.poses().back();
+  // Register frame, main entry point to KISS-ICP pipeline
+  const auto& [frame, keypoints] = tracker.RegisterFrame(transformed_pcd->points_);
+
+  kicp_pose = tracker.poses().back();
   const Eigen::Vector3d t_current = kicp_pose.translation();
   const Eigen::Quaterniond q_current = kicp_pose.unit_quaternion();
   Eigen::Isometry3d eigen_pose = Eigen::Isometry3d::Identity();
   eigen_pose.translation() = t_current;
   eigen_pose.linear() = q_current.toRotationMatrix();
 
-  downsampled_pcd->Transform(eigen_pose.matrix());
-  downsampled_pcd->PaintUniformColor(Eigen::Vector3d(0.0, 0.0, 1.0));
+  std::cerr << "new pose:\n" << eigen_pose.matrix() << std::endl;
+
+  transformed_pcd->Transform(eigen_pose.matrix());
+  transformed_pcd->PaintUniformColor(Eigen::Vector3d(0.0, 0.0, 1.0));
 
   visualizer.ClearGeometries();
   visualizer.AddGeometry(open3d::geometry::TriangleMesh::CreateCoordinateFrame());
   visualizer.AddGeometry(createReferenceFrame(eigen_pose));
   visualizer.AddGeometry(local_map_pcd);
-  visualizer.AddGeometry(downsampled_pcd);
+  visualizer.AddGeometry(transformed_pcd);
   visualizer.UpdateGeometry();
 
   while (!play)
@@ -232,8 +251,8 @@ int main(int argc, char** argv)
   Sophus::SE3d initial_pose;
   Eigen::Matrix3d R = Eigen::AngleAxisd(-M_PI_2, Eigen::Vector3d::UnitZ()).toRotationMatrix();
   initial_pose.setRotationMatrix(R);
-  initial_pose.translation() << 4.672, 11.5, -1.377;
-  tracker.poses_.push_back(initial_pose);
+  initial_pose.translation() << -11.5, -4.672, -1.377;
+  //  tracker.poses_.push_back(initial_pose);
 
   ros::Time::init();
 
